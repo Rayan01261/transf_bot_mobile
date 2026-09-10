@@ -1,0 +1,5 @@
+Flask
+flask-socketio
+eventlet
+selenium
+PyPDF2
