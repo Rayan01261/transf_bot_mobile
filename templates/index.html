@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Movimentação de bens — GRP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+<style>
+  :root {
+    --bg: #17191B;
+    --panel: #202327;
+    --panel-raised: #262A2E;
+    --line: #34383D;
+    --text: #EDEDE7;
+    --text-muted: #8B9096;
+    --amber: #D8A339;
+    --amber-text: #F3D390;
+    --teal: #4C8C8B;
+    --teal-text: #9AC7C6;
+    --danger: #C1544C;
+    --danger-text: #ECA9A3;
+    --success: #6FA86F;
+    --success-text: #B7D9B7;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 20px 16px 40px;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 2px;
+    letter-spacing: 0.2px;
+  }
+
+  header p {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin: 0;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .codigo2fa {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 18px;
+  }
+
+  .campo2fa {
+    width: 42px;
+    height: 50px;
+    text-align: center;
+    font-size: 20px;
+    font-family: 'IBM Plex Mono', monospace;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text);
+  }
+
+  .campo2fa:focus {
+    outline: none;
+    border-color: var(--amber);
+  }
+
+  .modal-2fa-box {
+    background: var(--panel);
+    padding: 24px 20px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 340px;
+    text-align: center;
+  }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-muted);
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--danger);
+    flex-shrink: 0;
+  }
+
+  .dot.on { background: var(--success); }
+
+  section {
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 14px 16px 16px;
+    margin-bottom: 12px;
+  }
+
+  section h2 {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+    text-transform: none;
+  }
+
+  .field {
+    margin-bottom: 12px;
+  }
+
+  .field:last-child { margin-bottom: 0; }
+
+  .field label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  input {
+    width: 100%;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 16px;
+    padding: 11px 12px;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+
+  input:focus {
+    outline: none;
+    border-color: var(--text-muted);
+  }
+
+  input.mono {
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.3px;
+  }
+
+  input::placeholder { color: #565B60; }
+
+  .row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .scan-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .scan-row input { flex: 1; }
+
+  .btn-scan {
+    flex-shrink: 0;
+    width: 46px;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .btn-scan:active { transform: scale(0.96); }
+
+  .btn-scan svg { width: 20px; height: 20px; }
+
+  .modes {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .mode {
+    flex: 1;
+    text-align: center;
+    padding: 10px 6px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel-raised);
+    color: var(--text-muted);
+    font-size: 12.5px;
+    line-height: 1.3;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .mode.active[data-mode="fixa"] {
+    border-color: var(--amber);
+    color: var(--amber-text);
+    background: rgba(216, 163, 57, 0.12);
+  }
+
+  .mode.active[data-mode="especifica"] {
+    border-color: var(--teal);
+    color: var(--teal-text);
+    background: rgba(76, 140, 139, 0.14);
+  }
+
+  .mode.active[data-mode="consulta"] {
+    border-color: var(--text-muted);
+    color: var(--text);
+    background: var(--panel-raised);
+  }
+
+  .primary-btn {
+    width: 100%;
+    border: none;
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    cursor: pointer;
+    margin-top: 14px;
+    color: #1A1A17;
+  }
+
+  .primary-btn:active { transform: scale(0.985); }
+  .primary-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .primary-btn.fixa { background: var(--amber); }
+  .primary-btn.especifica { background: var(--teal); color: #0F2020; }
+  .primary-btn.consulta { background: #C9CBCE; }
+
+  .hint {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 8px;
+    line-height: 1.4;
+  }
+
+  .log {
+    background: #101214;
+    border-radius: 8px;
+    padding: 10px 12px;
+    height: 150px;
+    overflow-y: auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .log-line { color: var(--text-muted); }
+  .log-line.erro { color: var(--danger-text); }
+  .log-line.alerta { color: var(--amber-text); }
+  .log-line .t { color: #565B60; margin-right: 6px; }
+
+  .result {
+    display: none;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-top: 10px;
+  }
+
+    .fila-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+  }
+
+  .fila-item:last-child { margin-bottom: 0; }
+
+  .fila-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+  }
+
+  .fila-tipo {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text);
+  }
+
+  .fila-detalhe {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .fila-badge {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-family: 'IBM Plex Mono', monospace;
+    padding: 3px 8px;
+    border-radius: 20px;
+    margin-left: 8px;
+  }
+
+  .fila-badge.aguardando { background: rgba(216, 163, 57, 0.14); color: var(--amber-text); }
+  .fila-badge.executando { background: rgba(76, 140, 139, 0.16); color: var(--teal-text); }
+  .fila-badge.concluida  { background: rgba(111, 168, 111, 0.14); color: var(--success-text); }
+  .fila-badge.erro       { background: rgba(193, 84, 76, 0.14); color: var(--danger-text); }
+
+  .fila-vazia {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    text-align: center;
+    padding: 8px 0;
+  }
+
+  .result.show { display: block; }
+  .result.ok { background: rgba(111, 168, 111, 0.12); color: var(--success-text); border: 1px solid rgba(111, 168, 111, 0.3); }
+  .result.erro { background: rgba(193, 84, 76, 0.12); color: var(--danger-text); border: 1px solid rgba(193, 84, 76, 0.3); }
+
+  .scanner-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    z-index: 50;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+
+  .scanner-overlay.show { display: flex; }
+
+  .scanner-overlay video {
+    width: 90%;
+    max-width: 380px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+  }
+
+  .scanner-overlay p {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin: 16px 0;
+    font-family: 'IBM Plex Mono', monospace;
+    text-align: center;
+    padding: 0 20px;
+  }
+
+  .scanner-close {
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    font-size: 14px;
+  }
+
+  .download-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .download-item a {
+    color: var(--amber-text);
+    text-decoration: none;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    border: 1px solid var(--line);
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div>
+      <h1>Movimentação de bens</h1>
+      <p>GRP · TJSE</p>
+    </div>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="status-text">desconectado</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Sessão</h2>
+    <div class="row-2">
+      <div class="field">
+        <label for="usuario">Usuário</label>
+        <input id="usuario" autocomplete="username" placeholder="ll3040">
+      </div>
+      <div class="field">
+        <label for="senha">Senha</label>
+        <input id="senha" type="password" autocomplete="current-password" placeholder="••••••••">
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Código do bem</h2>
+    <div class="scan-row">
+      <input class="mono" id="objeto" placeholder="Digite ou escaneie o código" inputmode="numeric">
+      <button class="btn-scan" id="btn-scan" aria-label="Escanear código de barras">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M4 5v14M8 5v14M11 5v14M15 5v6M15 15v4M19 5v14" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <p class="hint" id="scan-hint"></p>
+  </section>
+
+  <section>
+    <h2>Ação</h2>
+    <div class="modes">
+      <div class="mode active" data-mode="fixa">Transferência</div>
+      <div class="mode" data-mode="especifica">Transferência específica</div>
+      <div class="mode" data-mode="consulta">Consulta</div>
+    </div>
+
+    <div class="field" id="field-destino" style="display:none; margin-top: 14px;">
+      <label for="destino">Local de destino</label>
+      <input class="mono" id="destino" placeholder="Código do local" inputmode="numeric">
+    </div>
+
+    <div class="field" id="field-chamado" style="margin-top: 14px;">
+      <label for="chamado">Chamado</label>
+      <input class="mono" id="chamado" placeholder="Número do chamado">
+    </div>
+
+    <button class="primary-btn fixa" id="btn-executar">Iniciar transferência</button>
+
+    <div class="result" id="result"></div>
+  </section>
+
+  <section id="section-fila">
+    <h2>Fila de tarefas</h2>
+    <div id="lista-fila">
+      <p class="fila-vazia">Nenhuma tarefa na fila.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Registro</h2>
+    <div class="log" id="log"></div>
+  </section>
+
+  <section id="section-downloads" style="display:none;">
+    <h2>PDFs gerados</h2>
+    <div id="lista-downloads"></div>
+  </section>
+
+</div>
+
+<div class="scanner-overlay" id="scanner-overlay">
+  <video id="scanner-video" autoplay playsinline muted></video>
+  <p id="scanner-status">Aponte a câmera para o código de barras.</p>
+  <button class="scanner-close" id="scanner-close">Cancelar</button>
+</div>
+
+<div class="scanner-overlay" id="modal-2fa">
+  <div class="modal-2fa-box">
+    <p style="margin:0 0 4px; font-size:14px; color:var(--text);">Confirmação em duas etapas</p>
+    <p style="margin:0 0 16px; font-size:12px; color:var(--text-muted); font-family:'IBM Plex Mono', monospace;">
+      Digite o código de 6 dígitos
+    </p>
+    <div id="formOpcao2fa:codigo2fa" class="codigo2fa">
+      <input id="formOpcao2fa:dfaValor1" name="formOpcao2fa:dfaValor1" type="text" inputmode="numeric" value="" onkeyup="autoTab(this)" maxlength="1" size="1" class="campo2fa">
+      <input id="formOpcao2fa:dfaValor2" name="formOpcao2fa:dfaValor2" type="text" inputmode="numeric" value="" onkeyup="autoTab(this)" maxlength="1" size="1" class="campo2fa">
+      <input id="formOpcao2fa:dfaValor3" name="formOpcao2fa:dfaValor3" type="text" inputmode="numeric" value="" onkeyup="autoTab(this)" maxlength="1" size="1" class="campo2fa">
+      <input id="formOpcao2fa:dfaValor4" name="formOpcao2fa:dfaValor4" type="text" inputmode="numeric" value="" onkeyup="autoTab(this)" maxlength="1" size="1" class="campo2fa">
+      <input id="formOpcao2fa:dfaValor5" name="formOpcao2fa:dfaValor5" type="text" inputmode="numeric" value="" onkeyup="autoTab(this)" maxlength="1" size="1" class="campo2fa">
+      <input id="formOpcao2fa:dfaValor6" name="formOpcao2fa:dfaValor6" type="text" inputmode="numeric" value="" onkeyup="autoTab(this)" maxlength="1" size="1" class="campo2fa">
+    </div>
+    <button class="scanner-close" id="btn-confirmar-2fa">Confirmar</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var socket = null;
+  var currentMode = "fixa";
+  var ENDERECO_SERVIDOR = "http://192.168.0.10:5000"; // ajuste para o endereço real do seu backend
+
+  var elUsuario = document.getElementById("usuario");
+  var elSenha = document.getElementById("senha");
+  var elObjeto = document.getElementById("objeto");
+  var elDestino = document.getElementById("destino");
+  var elChamado = document.getElementById("chamado");
+  var elDot = document.getElementById("dot");
+  var elStatusText = document.getElementById("status-text");
+  var elLog = document.getElementById("log");
+  var elResult = document.getElementById("result");
+  var elBtnExecutar = document.getElementById("btn-executar");
+  var elFieldDestino = document.getElementById("field-destino");
+  var elFieldChamado = document.getElementById("field-chamado");
+  var elScanHint = document.getElementById("scan-hint");
+  var elModal2fa = document.getElementById("modal-2fa");
+  var elListaFila = document.getElementById("lista-fila");
+  var btnConfirmar2fa = document.getElementById("btn-confirmar-2fa");
+  var camposCodigo2fa = [1, 2, 3, 4, 5, 6].map(function (i) {
+    return document.getElementById("formOpcao2fa:dfaValor" + i);
+  });
+
+  var elSectionDownloads = document.getElementById("section-downloads");
+  var elListaDownloads = document.getElementById("lista-downloads");
+
+  function adicionarDownload(nomeArquivo, conteudoBase64) {
+    var byteCharacters = atob(conteudoBase64);
+    var byteNumbers = new Array(byteCharacters.length);
+    for (var i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    var byteArray = new Uint8Array(byteNumbers);
+    var blob = new Blob([byteArray], { type: "application/pdf" });
+    var url = URL.createObjectURL(blob);
+
+    var item = document.createElement("div");
+    item.className = "download-item";
+
+    var nome = document.createElement("span");
+    nome.textContent = nomeArquivo;
+
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = nomeArquivo;
+    link.textContent = "Baixar";
+
+    item.appendChild(nome);
+    item.appendChild(link);
+    elListaDownloads.prepend(item);
+    elSectionDownloads.style.display = "block";
+  }
+
+  var rotulosTipo = {
+    resultado_transferir: "Transferência",
+    resultado_transferir_recebimento: "Transferência específica",
+    resultado_transferir_em_massa: "Transferência em massa",
+    resultado_consulta: "Consulta",
+    resultado_consulta_em_massa: "Consulta em massa"
+  };
+
+  var rotulosStatus = {
+    aguardando: "aguardando",
+    executando: "executando",
+    concluida: "concluída",
+    erro: "erro"
+  };
+
+  function renderizarFila(tarefasList) {
+    elListaFila.innerHTML = "";
+
+    if (!tarefasList || tarefasList.length === 0) {
+      var vazio = document.createElement("p");
+      vazio.className = "fila-vazia";
+      vazio.textContent = "Nenhuma tarefa na fila.";
+      elListaFila.appendChild(vazio);
+      return;
+    }
+
+    tarefasList.forEach(function (t) {
+      var item = document.createElement("div");
+      item.className = "fila-item";
+
+      var info = document.createElement("div");
+      info.className = "fila-info";
+
+      var tipo = document.createElement("span");
+      tipo.className = "fila-tipo";
+      tipo.textContent = rotulosTipo[t.tipo] || t.tipo;
+
+      var detalhe = document.createElement("span");
+      detalhe.className = "fila-detalhe";
+      detalhe.textContent = t.objeto ? ("bem " + t.objeto) : "";
+
+      info.appendChild(tipo);
+      if (detalhe.textContent) info.appendChild(detalhe);
+
+      var badge = document.createElement("span");
+      badge.className = "fila-badge " + (t.status || "aguardando");
+      badge.textContent = rotulosStatus[t.status] || t.status;
+
+      item.appendChild(info);
+      item.appendChild(badge);
+      elListaFila.appendChild(item);
+    });
+  }
+
+  window.autoTab = function (campo) {
+    if (!/^[0-9]?$/.test(campo.value)) {
+      campo.value = "";
+      return;
+    }
+    var index = camposCodigo2fa.indexOf(campo);
+    if (campo.value && index < camposCodigo2fa.length - 1) {
+      camposCodigo2fa[index + 1].focus();
+    }
+    if (campo.value && index === camposCodigo2fa.length - 1) {
+      enviarCodigo2fa();
+    }
+  };
+
+  camposCodigo2fa.forEach(function (campo, index) {
+    campo.addEventListener("keydown", function (e) {
+      if (e.key === "Backspace" && !campo.value && index > 0) {
+        camposCodigo2fa[index - 1].focus();
+      }
+    });
+  });
+
+  function enviarCodigo2fa() {
+    var codigo = camposCodigo2fa.map(function (c) { return c.value; }).join("");
+    if (!/^\d{6}$/.test(codigo)) {
+      addLog("Informe os 6 dígitos do código.", "erro");
+      return;
+    }
+    socket.emit("enviar_2fa", { codigo: codigo });
+    fecharModal2fa();
+    addLog("Código de 2FA enviado.");
+  }
+
+  function abrirModal2fa() {
+    camposCodigo2fa.forEach(function (c) { c.value = ""; });
+    elModal2fa.classList.add("show");
+    camposCodigo2fa[0].focus();
+  }
+
+  function fecharModal2fa() {
+    elModal2fa.classList.remove("show");
+  }
+
+  btnConfirmar2fa.addEventListener("click", enviarCodigo2fa);
+
+  // ---- Preferências salvas localmente (servidor e usuário; nunca a senha) ----
+    // ---- Preferência salva localmente (usuário; nunca a senha) ----
+  try {
+    elUsuario.value = localStorage.getItem("grp_usuario") || "";
+  } catch (e) {}
+
+  function salvarPreferencias() {
+    try {
+      localStorage.setItem("grp_usuario", elUsuario.value.trim());
+    } catch (e) {}
+  }
+
+  // ---- Log ----
+  function addLog(mensagem, tipo) {
+    var linha = document.createElement("div");
+    linha.className = "log-line" + (tipo ? " " + tipo : "");
+    var hora = new Date().toLocaleTimeString("pt-BR", { hour12: false });
+    linha.innerHTML = '<span class="t">' + hora + '</span>' + escapeHtml(mensagem);
+    elLog.appendChild(linha);
+    elLog.scrollTop = elLog.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function showResult(ok, texto) {
+    elResult.className = "result show " + (ok ? "ok" : "erro");
+    elResult.textContent = texto;
+  }
+
+  // ---- Conexão ----
+  function conectar() {
+    if (socket) {
+      socket.disconnect();
+    }
+
+    elStatusText.textContent = "conectando…";
+    elDot.classList.remove("on");
+
+    socket = io(ENDERECO_SERVIDOR, { transports: ["websocket", "polling"] });
+
+    socket.on("connect", function () {
+      elDot.classList.add("on");
+      elStatusText.textContent = "conectado";
+    });
+
+    socket.on("fila_atualizada", function (data) {
+      renderizarFila(data.tarefas);
+    });
+
+    socket.on("disconnect", function () {
+      elDot.classList.remove("on");
+      elStatusText.textContent = "desconectado";
+    });
+
+    socket.on("connect_error", function () {
+      elDot.classList.remove("on");
+      elStatusText.textContent = "erro de conexão";
+    });
+
+    socket.on("solicitar_2fa", function () {
+      abrirModal2fa();
+    });
+
+    socket.on("log", function (data) {
+      addLog(data.mensagem, data.tipo === "erro" ? "erro" : (data.tipo === "alerta" ? "alerta" : ""));
+    });
+
+    socket.on("pdf_disponivel", function (data) {
+      adicionarDownload(data.nome_arquivo, data.conteudo_base64);
+      addLog("PDF disponível para download: " + data.nome_arquivo);
+    });
+
+    ["resultado_transferir", "resultado_transferir_recebimento", "resultado_consulta"].forEach(function (evento) {
+      socket.on(evento, function (data) {
+        if (data.status === "ok") {
+          showResult(true, typeof data.resultado === "object" ? JSON.stringify(data.resultado) : String(data.resultado));
+        } else {
+          showResult(false, data.mensagem || "A ação não foi concluída.");
+        }
+      });
+    });
+  }
+
+
+  // ---- Seleção de modo ----
+  var modos = document.querySelectorAll(".mode");
+  modos.forEach(function (el) {
+    el.addEventListener("click", function () {
+      modos.forEach(function (m) { m.classList.remove("active"); });
+      el.classList.add("active");
+      currentMode = el.getAttribute("data-mode");
+      atualizarCampos();
+    });
+  });
+
+  function atualizarCampos() {
+    elFieldDestino.style.display = currentMode === "especifica" ? "block" : "none";
+    elFieldChamado.style.display = currentMode === "consulta" ? "none" : "block";
+
+    elBtnExecutar.classList.remove("fixa", "especifica", "consulta");
+    elBtnExecutar.classList.add(currentMode);
+
+    if (currentMode === "fixa") elBtnExecutar.textContent = "Iniciar transferência";
+    if (currentMode === "especifica") elBtnExecutar.textContent = "Iniciar transferência específica";
+    if (currentMode === "consulta") elBtnExecutar.textContent = "Consultar objeto";
+
+    elResult.classList.remove("show");
+  }
+
+  atualizarCampos();
+
+  // ---- Execução da ação ----
+
+  elBtnExecutar.addEventListener("click", function () {
+    salvarPreferencias();
+    elResult.classList.remove("show");
+
+    if (!socket || !socket.connected) {
+      addLog("Sem conexão com o servidor.", "erro");
+      return;
+    }
+
+    var usuario = elUsuario.value.trim();
+    var senha = elSenha.value;
+    var objeto = elObjeto.value.trim();
+    var chamado = elChamado.value.trim();
+    var destino = elDestino.value.trim();
+
+    if (!usuario || !senha) {
+      addLog("Informe usuário e senha.", "erro");
+      return;
+    }
+    if (!objeto) {
+      addLog("Informe o código do bem.", "erro");
+      return;
+    }
+
+    var payload = { usuario: usuario, senha: senha, objeto: objeto };
+    var evento = "";
+
+    if (currentMode === "fixa") {
+      if (!chamado) { addLog("Informe o chamado.", "erro"); return; }
+      payload.chamado = chamado;
+      evento = "transferir";
+    } else if (currentMode === "especifica") {
+      if (!destino) { addLog("Informe o local de destino.", "erro"); return; }
+      if (!chamado) { addLog("Informe o chamado.", "erro"); return; }
+      payload.destino = destino;
+      payload.chamado = chamado;
+      evento = "transferir_recebimento";
+    } else {
+      evento = "consulta";
+    }
+
+    socket.emit(evento, payload);
+    addLog("Tarefa enviada para a fila.");
+  });
+
+    // ---- Leitor de código de barras (câmera, via ZXing) ----
+  var overlay = document.getElementById("scanner-overlay");
+  var video = document.getElementById("scanner-video");
+  var scannerStatus = document.getElementById("scanner-status");
+  var btnScan = document.getElementById("btn-scan");
+  var btnClose = document.getElementById("scanner-close");
+  var zxingReader = null;
+  var zxingDisponivel = typeof ZXing !== "undefined";
+
+  if (!zxingDisponivel) {
+    elScanHint.textContent = "Leitura por câmera não disponível — digite o código manualmente. Um leitor de código de barras físico funciona normalmente ao focar o campo.";
+  } else {
+    elScanHint.textContent = "Toque no ícone para escanear com a câmera, ou use um leitor físico com o campo em foco.";
+  }
+
+  btnScan.addEventListener("click", function () {
+    if (!zxingDisponivel) {
+      elObjeto.focus();
+      return;
+    }
+    abrirScanner();
+  });
+
+  btnClose.addEventListener("click", fecharScanner);
+
+  function abrirScanner() {
+    overlay.classList.add("show");
+    scannerStatus.textContent = "Aponte a câmera para o código de barras.";
+
+    if (!zxingReader) {
+      zxingReader = new ZXing.BrowserMultiFormatReader();
+    }
+
+    zxingReader.decodeFromConstraints(
+      { video: { facingMode: "environment" } },
+      video,
+      function (resultado, erro) {
+        if (resultado) {
+          elObjeto.value = resultado.getText();
+          addLog("Código lido pela câmera: " + resultado.getText());
+          fecharScanner();
+        }
+        // erro do tipo NotFoundException é disparado a cada frame sem leitura — ignorar
+      }
+    ).catch(function () {
+      scannerStatus.textContent = "Não foi possível acessar a câmera. Verifique a permissão.";
+    });
+  }
+
+  function fecharScanner() {
+    overlay.classList.remove("show");
+    if (zxingReader) {
+      zxingReader.reset();
+    }
+  }
+
+  function loopDeteccao() {
+    if (!detectando) return;
+
+    var detector = new BarcodeDetector();
+    detector.detect(video)
+      .then(function (codigos) {
+        if (codigos.length > 0) {
+          elObjeto.value = codigos[0].rawValue;
+          fecharScanner();
+          addLog("Código lido pela câmera: " + codigos[0].rawValue);
+        } else if (detectando) {
+          requestAnimationFrame(loopDeteccao);
+        }
+      })
+      .catch(function () {
+        if (detectando) requestAnimationFrame(loopDeteccao);
+      });
+  }
+
+  // ---- Leitor físico (USB/Bluetooth em modo teclado) ----
+  // Um leitor físico digita o código no campo em foco e envia Enter — já funciona nativamente.
+  elObjeto.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      elChamado.focus();
+    }
+  });
+
+  
+  conectar();
+})();
+</script>
+</body>
+</html>
