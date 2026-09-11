@@ -1,5 +1,7 @@
 Flask
 flask-socketio
-eventlet
 selenium
+gunicorn
+gevent
+gevent-websocket
 PyPDF2

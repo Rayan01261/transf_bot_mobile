@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  # Container da sua Aplicação Flask + Selenium
+  app:
+    build: .
+    container_name: flask_selenium_app
+    restart: always
+    environment:
+      - NUM_WORKERS=3
+      - CHROME_BIN=/usr/bin/chromium
+      - CHROMEDRIVER_PATH=/usr/bin/chromedriver
+    # Não precisa expor portas para a máquina hospedeira!
+
+  # Container do Cloudflare Tunnel
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare_tunnel
+    restart: always
+    command: tunnel --no-autoupdate run --token eyJhIjoiN2JiODAyYTc4ZWMzZDRmODJlZThmY2I2OWNkNGU3NTMiLCJ0IjoiYmVkMDZlN2UtNmQ5My00OTkwLTljNTItNjIxN2Y4NWVkNTAxIiwicyI6Ik1EbGxNMlkwT0RFdE5qY3daQzAwTURObUxXSTVPV0l0TjJFNU1qYzJZelU1TjJJMyJ9
+    depends_on:
+      - app

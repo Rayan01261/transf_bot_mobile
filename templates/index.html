@@ -522,7 +522,7 @@
 (function () {
   var socket = null;
   var currentMode = "fixa";
-  var ENDERECO_SERVIDOR = "http://192.168.0.10:5000"; // ajuste para o endereço real do seu backend
+  var ENDERECO_SERVIDOR = window.location.origin;
 
   var elUsuario = document.getElementById("usuario");
   var elSenha = document.getElementById("senha");
