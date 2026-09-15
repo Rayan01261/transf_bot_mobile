@@ -17,6 +17,11 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflare_tunnel
     restart: always
-    command: tunnel --no-autoupdate run --token eyJhIjoiN2JiODAyYTc4ZWMzZDRmODJlZThmY2I2OWNkNGU3NTMiLCJ0IjoiYmVkMDZlN2UtNmQ5My00OTkwLTljNTItNjIxN2Y4NWVkNTAxIiwicyI6Ik1EbGxNMlkwT0RFdE5qY3daQzAwTURObUxXSTVPV0l0TjJFNU1qYzJZelU1TjJJMyJ9
+    command: tunnel --no-autoupdate --protocol http2 run --token eyJhIjoiN2JiODAyYTc4ZWMzZDRmODJlZThmY2I2OWNkNGU3NTMiLCJ0IjoiYmVkMDZlN2UtNmQ5My00OTkwLTljNTItNjIxN2Y4NWVkNTAxIiwicyI6Ik1EbGxNMlkwT0RFdE5qY3daQzAwTURObUxXSTVPV0l0TjJFNU1qYzJZelU1TjJJMyJ9
+    environment:
+      - HTTP_PROXY=http://172.17.0.19:3128
+      - HTTPS_PROXY=http://172.17.0.19:3128
+      - NO_PROXY=localhost,127.0.0.1
+      - TUNNEL_TRANSPORT_PROTOCOL=http2
     depends_on:
       - app

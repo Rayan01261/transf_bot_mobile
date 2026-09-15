@@ -91,7 +91,12 @@ def emit_pdf(sid, nome_arquivo, caminho_arquivo):
 def _rotulo_objeto(item):
     """Extrai um texto amigável (código do bem) para exibir na fila, se existir."""
     args = item.get("args", ())
-    return args[0] if args else None
+    if not args:
+        return None
+    primeiro = args[0]
+    if isinstance(primeiro, (list, tuple)):
+        return f"{len(primeiro)} itens"
+    return primeiro
 
 
 def atualizar_status_tarefa(id_tarefa, **campos):
@@ -351,45 +356,49 @@ def consulta(objeto, driver, wait, sid=None, retornar_local=False):
     return texto
 
 
-def consulta_em_massa(driver, wait, sid=None):
-    with open(ARQUIVO_ENTRADA, "r", encoding="utf-8") as f:
-        objetos = [linha.strip() for linha in f if linha.strip()]
-
+def consulta_em_massa(objetos, driver, wait, sid=None):
     saida = open(ARQUIVO_SAIDA, "w", encoding="utf-8")
 
-    botao = wait.until(EC.element_to_be_clickable((By.ID, "formModalMenu:j_id_9b_8")))
+    botao = wait.until(
+        EC.element_to_be_clickable((
+            By.XPATH,
+            "//span[text()='Consulta de Bens Móveis']/ancestor::a"
+        ))
+    )
     botao.click()
     time.sleep(1)
 
     resultados = []
 
     for objeto in objetos:
-        driver.find_element(
+        campo = driver.find_element(
             By.ID, "form_consultaBensMoveisM:codigoBem:fieldNumerico1:field"
-        ).send_keys(objeto)
-        driver.find_element(
-            By.ID, "form_consultaBensMoveisM:codigoBem:fieldNumerico1:field"
-        ).send_keys(Keys.ENTER)
+        )
+        campo.click()
+        campo.send_keys(Keys.CONTROL, "a")
+        campo.send_keys(Keys.DELETE)
+        campo.send_keys(objeto)
+        campo.send_keys(Keys.ENTER)
         time.sleep(1)
+
         try:
-            elemento = driver.find_element(By.XPATH, "//a[@rel='detalhes']")
+            elemento = driver.find_element(
+                By.XPATH, "//tr[contains(@id, 'dataTable:0')]//td[4]//a[@rel='detalhes']"
+            )
             texto = elemento.text
+            emit_log(sid, f"Objeto encontrado: {objeto} -> {texto}")
         except Exception:
+            emit_log(sid, f"{objeto}: esse objeto não existe.")
             botao = wait.until(EC.element_to_be_clickable((
                 By.XPATH, "//img[@title='Fechar todas as mensagens']"
             )))
-            texto = "elemento não encontrado"
             botao.click()
+            texto = "inexistente"
 
         linha = f"{objeto} | {texto}"
         saida.write(linha + "\n")
         saida.flush()
         resultados.append(linha)
-        emit_log(sid, f"OK: {linha}")
-
-        driver.find_element(
-            By.ID, "form_consultaBensMoveisM:codigoBem:fieldNumerico1:field"
-        ).clear()
 
     saida.close()
     emit_log(sid, "Consulta em massa finalizada. Arquivo salvo em resultado.txt")
@@ -782,8 +791,8 @@ def transferir_recebimento(objeto, destino, chamado, driver, wait, sid=None):
 
 def transferencia_em_massa(destino, chamado, driver, wait, sid=None):
     """Equivalente ao antigo tranferenciaEmMassa(): usa resultado_organizado.txt como entrada."""
-    with open("resultado_organizado.txt", "r", encoding="utf-8") as f:
-        linhas = f.readlines()
+    with open(ARQUIVO_SAIDA, "r", encoding="utf-8") as f:
+        linhas = [l for l in f.readlines() if l.strip()]
         primeira = linhas[0]
         origem = primeira.split(" | ")[1].split(" - ")[0]
 
@@ -802,14 +811,14 @@ def transferencia_em_massa(destino, chamado, driver, wait, sid=None):
     botao.click()
     time.sleep(1)
 
-    driver.find_element(
-        By.ID, "form_transferenciaBemM:codigoLocalOrigem:field"
-    ).send_keys(origem)
+    _preencher_campo_autocomplete(
+        driver, "form_transferenciaBemM:codigoLocalOrigem:field", origem
+    )
 
     try:
-        driver.find_element(
-            By.ID, "form_transferenciaBemM:codigoLocalDestino:field"
-        ).send_keys(destino)
+        _preencher_campo_autocomplete(
+            driver, "form_transferenciaBemM:codigoLocalDestino:field", destino
+        )
     except Exception:
         emit_log(sid, "Destino inválido", tipo="erro")
         time.sleep(3)
@@ -849,7 +858,11 @@ def transferencia_em_massa(destino, chamado, driver, wait, sid=None):
         emit_log(sid, f"Inserindo {objeto}")
         time.sleep(1)
 
-        botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@value='Inserir Bens']")))
+        botao = wait.until(EC.element_to_be_clickable((
+            By.XPATH,
+            "//input[@value='Inserir bens' or @title='Inserir bens'] | "
+            "//*[@id='form_transferenciaBemM:j_id_a7_d_2_so_38_ep']"
+        )))
         botao.click()
         time.sleep(1)
 
@@ -867,10 +880,11 @@ def transferencia_em_massa(destino, chamado, driver, wait, sid=None):
                 "form_transferenciaBemM:dataTableModalInsereBens:0:divDataAquisicaoItemTransferenciaBem"
             )))
             botao.click()
-            time.sleep(0.5)
+            time.sleep(1)
+
             botao = wait.until(EC.element_to_be_clickable((
                 By.XPATH,
-                "//div[contains(@id, 'msgModalInserirBensItemTransferencia')]//input[@value='Inserir']"
+                "//table[@id='form_transferenciaBemM:panelBotoes']//input[@value='Inserir']"
             )))
             botao.click()
             time.sleep(1)
@@ -878,13 +892,6 @@ def transferencia_em_massa(destino, chamado, driver, wait, sid=None):
         except Exception:
             emit_log(sid, f"{objeto} não passou", tipo="alerta")
             patrimonios_ruins.append(objeto)
-            try:
-                botao = wait.until(EC.element_to_be_clickable((
-                    By.XPATH, "//img[@title='Fechar todas as mensagens']"
-                )))
-                botao.click()
-            except Exception:
-                pass
 
         try:
             botao = wait.until(EC.element_to_be_clickable((
@@ -892,11 +899,7 @@ def transferencia_em_massa(destino, chamado, driver, wait, sid=None):
             )))
             botao.click()
         except Exception:
-            botao = wait.until(EC.element_to_be_clickable((
-                By.ID, "form_transferenciaBemM:j_id_a7_d_2_so_38_ep"
-            )))
-            botao.click()
-            time.sleep(1)
+            pass
 
     if patrimonios_ruins:
         with open("Patrimonios_ruins.txt", "a", encoding="utf-8") as f:
@@ -1128,15 +1131,27 @@ def handle_consulta(data):
 
 
 @socketio.on("consulta_em_massa")
-def handle_consulta_em_massa(_data):
+def handle_consulta_em_massa(data):
     sid = request.sid
+    data = data or {}
+    objetos = data.get("objetos")
+    usuario = data.get("usuario")
+    senha = data.get("senha")
+
+    if not objetos or not isinstance(objetos, list):
+        emit_log(sid, "Payload inválido. Esperado: {objetos: [...]}", tipo="erro")
+        return
+    if not usuario or not senha:
+        emit_log(sid, "Informe usuário e senha antes de executar a ação.", tipo="erro")
+        return
+
     registrar_tarefa_na_fila({
         "sid": sid,
         "evento_resposta": "resultado_consulta_em_massa",
         "funcao_acao": consulta_em_massa,
-        "args": (),
-        "usuario": None,
-        "senha": None,
+        "args": (objetos,),
+        "usuario": usuario,
+        "senha": senha,
     })
     
 

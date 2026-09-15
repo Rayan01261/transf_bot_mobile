@@ -1,5 +1,12 @@
 FROM python:3.10-slim
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV HTTP_PROXY=$HTTP_PROXY
+ENV HTTPS_PROXY=$HTTPS_PROXY
+ENV NO_PROXY=$NO_PROXY
+
 # Instala Chromium e dependências do sistema
 RUN apt-get update && apt-get install -y \
     wget \
