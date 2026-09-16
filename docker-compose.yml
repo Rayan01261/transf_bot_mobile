@@ -10,6 +10,8 @@ services:
       - NUM_WORKERS=3
       - CHROME_BIN=/usr/bin/chromium
       - CHROMEDRIVER_PATH=/usr/bin/chromedriver
+    volumes:
+      - grp_chrome_profile:/app/chrome-profile
     # Não precisa expor portas para a máquina hospedeira!
 
   # Container do Cloudflare Tunnel
@@ -19,9 +21,12 @@ services:
     restart: always
     command: tunnel --no-autoupdate --protocol http2 run --token eyJhIjoiN2JiODAyYTc4ZWMzZDRmODJlZThmY2I2OWNkNGU3NTMiLCJ0IjoiYmVkMDZlN2UtNmQ5My00OTkwLTljNTItNjIxN2Y4NWVkNTAxIiwicyI6Ik1EbGxNMlkwT0RFdE5qY3daQzAwTURObUxXSTVPV0l0TjJFNU1qYzJZelU1TjJJMyJ9
     environment:
-      - HTTP_PROXY=http://172.17.0.19:3128
-      - HTTPS_PROXY=http://172.17.0.19:3128
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
       - NO_PROXY=localhost,127.0.0.1
       - TUNNEL_TRANSPORT_PROTOCOL=http2
     depends_on:
       - app
+
+volumes:
+  grp_chrome_profile:

@@ -4,6 +4,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support import expected_conditions as EC
 
 from flask import Flask, request, render_template
@@ -24,7 +25,7 @@ import uuid
 
 # ================= CONFIG =================
 
-os.environ["HTTPS_PROXY"] = "http://172.17.0.19:3128/wpad.dat"  # ajuste para o proxy real da rede, sem /wpad.dat
+#os.environ["HTTPS_PROXY"] = "http://172.17.0.19:3128/wpad.dat"  # ajuste para o proxy real da rede, sem /wpad.dat
 
 ARQUIVO_ENTRADA = "patrimonios.txt"
 ARQUIVO_SAIDA = "resultado.txt"
@@ -34,7 +35,8 @@ LOGIN_SENHA = "SENHA"
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "secret"
-socketio = SocketIO(app, cors_allowed_origins="*")
+#socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 eventos_2fa = {}   # sid -> threading.Event
 codigos_2fa = {} 
@@ -210,14 +212,24 @@ def renomear_e_mover_pdf_em_massa(chamado_numero, sid=None):
 # ================= SELENIUM: OPÇÕES =================
 
 def novo_driver():
+    import glob
+    for lock_file in glob.glob("/app/chrome-profile/Singleton*"):
+        try:
+            os.remove(lock_file)
+        except FileNotFoundError:
+            pass
+
     options = Options()
-    # options.add_argument("--headless=new")
+    options.binary_location = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--user-data-dir=/app/chrome-profile")
 
-    driver = webdriver.Chrome(options=options)
+    service = Service(executable_path=os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver"))
+    driver = webdriver.Chrome(service=service, options=options)
     wait = WebDriverWait(driver, 25)
     return driver, wait
 
@@ -240,7 +252,7 @@ def verificar_e_tratar_2fa(driver, wait, sid=None, timeout=120):
     botao_opcao = wait.until(EC.element_to_be_clickable((
         By.XPATH, "//*[@id=\"formOpcao2fa:selecionaOpcao2fa\"]"
     )))
-    driver.execute_script("arguments[0].click();", botao_opcao)
+    #driver.execute_script("arguments[0].click();", botao_opcao)
 
     # Prepara a espera pelo código vindo do front
     evento = threading.Event()
@@ -788,6 +800,208 @@ def transferir_recebimento(objeto, destino, chamado, driver, wait, sid=None):
     return {"status": "ok", "objeto": objeto, "origem": origem, "destino": destino,
             "chamado": chamado, "mensagem": mensagem_final}
 
+def transferir_recebimento_em_massa(objetos, origem, destino, chamado, driver, wait, sid=None):
+    """Como transferir_recebimento(), mas para vários bens de uma vez,
+    usando a lista vinda do front (sem depender de resultado.txt)."""
+    emit_log(sid, "Iniciando transferência em massa (específica)...")
+
+    botao = wait.until(EC.element_to_be_clickable((
+        By.XPATH, "//span[text()='Transferência de Bens']/ancestor::a"
+    )))
+    botao.click()
+    time.sleep(1)
+    botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@title='Criar']")))
+    botao.click()
+    time.sleep(1)
+
+    _preencher_campo_autocomplete(
+        driver, "form_transferenciaBemM:codigoLocalOrigem:field", origem
+    )
+
+    try:
+        _preencher_campo_autocomplete(
+            driver, "form_transferenciaBemM:codigoLocalDestino:field", destino
+        )
+    except Exception:
+        emit_log(sid, "Destino inválido", tipo="erro")
+        time.sleep(3)
+        botao = wait.until(EC.element_to_be_clickable((
+            By.XPATH, "//a[contains(@id, 'botaoFecharJanela')]"
+        )))
+        botao.click()
+        time.sleep(2)
+        botao = wait.until(EC.element_to_be_clickable((By.ID, "formMenuModal:botaoMenuModal")))
+        botao.click()
+        time.sleep(2)
+        img = wait.until(EC.presence_of_element_located((By.XPATH, "//img[@title='Voltar']")))
+        ActionChains(driver).move_to_element(img).perform()
+        time.sleep(1)
+        botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[.//span[text()='Voltar']]")))
+        botao.click()
+        return {"status": "erro", "mensagem": "destino inválido"}
+
+    botao = wait.until(EC.element_to_be_clickable((By.ID, "form_transferenciaBemM:cmdl_salvar")))
+    botao.click()
+    time.sleep(1)
+    botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//img[@title='Fechar Mensagem']")))
+    botao.click()
+    time.sleep(1)
+
+    botao = wait.until(EC.element_to_be_clickable((
+        By.ID, "form_transferenciaBemM:aba_670280:header:inactive"
+    )))
+    botao.click()
+    time.sleep(1)
+
+    qtd_patri = 0
+    patrimonios_ruins = []
+
+    for objeto in objetos:
+        emit_log(sid, f"Inserindo {objeto}")
+        time.sleep(1)
+
+        botao = wait.until(EC.element_to_be_clickable((
+            By.XPATH,
+            "//input[@value='Inserir bens' or @title='Inserir bens'] | "
+            "//*[@id='form_transferenciaBemM:j_id_a7_d_2_so_38_ep']"
+        )))
+        botao.click()
+        time.sleep(1)
+
+        driver.find_element(
+            By.ID, "form_transferenciaBemM:campoCodigoBem:fieldNumerico1:field"
+        ).send_keys(objeto)
+        driver.find_element(
+            By.ID, "form_transferenciaBemM:campoCodigoBem:fieldNumerico1:field"
+        ).send_keys(Keys.ENTER)
+        time.sleep(1)
+
+        try:
+            botao = wait.until(EC.element_to_be_clickable((
+                By.ID,
+                "form_transferenciaBemM:dataTableModalInsereBens:0:divDataAquisicaoItemTransferenciaBem"
+            )))
+            botao.click()
+            time.sleep(1)
+
+            botao = wait.until(EC.element_to_be_clickable((
+                By.XPATH,
+                "//table[@id='form_transferenciaBemM:panelBotoes']//input[@value='Inserir']"
+            )))
+            botao.click()
+            time.sleep(1)
+            qtd_patri += 1
+        except Exception:
+            emit_log(sid, f"{objeto} não passou", tipo="alerta")
+            patrimonios_ruins.append(objeto)
+
+        try:
+            botao = wait.until(EC.element_to_be_clickable((
+                By.XPATH, "//img[@title='Fechar todas as mensagens']"
+            )))
+            botao.click()
+        except Exception:
+            pass
+
+    if qtd_patri == 0:
+        emit_log(sid, "Não teve patrimônios transferíveis")
+        time.sleep(1)
+        botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@value='Excluir']")))
+        botao.click()
+        time.sleep(1)
+        wait.until(EC.alert_is_present())
+        driver.switch_to.alert.accept()
+        time.sleep(1)
+        botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//img[@title='Fechar Mensagem']")))
+        botao.click()
+        time.sleep(1)
+        botao = wait.until(EC.element_to_be_clickable((By.ID, "j_id_a7_4:botaoFecharJanela")))
+        botao.click()
+        time.sleep(1)
+        botao = wait.until(EC.element_to_be_clickable((By.ID, "formMenuModal:botaoMenuModal")))
+        botao.click()
+        time.sleep(2)
+        img = wait.until(EC.presence_of_element_located((By.XPATH, "//img[@title='Voltar']")))
+        ActionChains(driver).move_to_element(img).perform()
+        time.sleep(1)
+        botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[.//span[text()='Voltar']]")))
+        botao.click()
+        return {"status": "vazio"}
+
+    time.sleep(1)
+    botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@value='Encerrar']")))
+    botao.click()
+    time.sleep(1)
+
+    wait.until(EC.alert_is_present())
+    driver.switch_to.alert.accept()
+
+    botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//img[@title='Fechar Mensagem']")))
+    botao.click()
+
+    _extrair_pdf_transferencia(driver, wait, chamado, sid=sid, em_massa=True)
+
+    botao = wait.until(EC.element_to_be_clickable((
+        By.XPATH, "(//a[contains(@id, 'botaoFecharJanela')])[2]"
+    )))
+    driver.execute_script("arguments[0].click();", botao)
+    time.sleep(3)
+
+    botao = wait.until(EC.element_to_be_clickable((
+        By.XPATH, "//a[contains(@id, 'botaoFecharJanela')]"
+    )))
+    botao.click()
+    time.sleep(2)
+    botao = wait.until(EC.element_to_be_clickable((By.ID, "formMenuModal:botaoMenuModal")))
+    botao.click()
+    time.sleep(2)
+    img = wait.until(EC.presence_of_element_located((By.XPATH, "//img[@title='Voltar']")))
+    ActionChains(driver).move_to_element(img).perform()
+    time.sleep(1)
+    botao = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[.//span[text()='Voltar']]")))
+    botao.click()
+
+    mensagem_final = (
+        f"Transferência em massa concluída: {qtd_patri} bem(ns) de {origem} para {destino}, "
+        f"sob o chamado {chamado}"
+    )
+    emit_log(sid, mensagem_final)
+    return {
+        "status": "ok", "origem": origem, "destino": destino, "chamado": chamado,
+        "qtd_patrimonios": qtd_patri, "patrimonios_ruins": patrimonios_ruins,
+        "mensagem": mensagem_final
+    }
+
+@socketio.on("transferir_recebimento_em_massa")
+def handle_transferir_recebimento_em_massa(data):
+    sid = request.sid
+    data = data or {}
+    objetos = data.get("objetos")
+    origem = data.get("origem")
+    destino = data.get("destino")
+    chamado = data.get("chamado")
+    usuario = data.get("usuario")
+    senha = data.get("senha")
+
+    if not objetos or not isinstance(objetos, list):
+        emit_log(sid, "Payload inválido. Esperado: {objetos: [...]}", tipo="erro")
+        return
+    if not origem or not destino or not chamado:
+        emit_log(sid, "Payload inválido. Esperado: {origem, destino, chamado}", tipo="erro")
+        return
+    if not usuario or not senha:
+        emit_log(sid, "Informe usuário e senha antes de executar a ação.", tipo="erro")
+        return
+
+    registrar_tarefa_na_fila({
+        "sid": sid,
+        "evento_resposta": "resultado_transferir_recebimento_em_massa",
+        "funcao_acao": transferir_recebimento_em_massa,
+        "args": (objetos, origem, destino, chamado),
+        "usuario": usuario,
+        "senha": senha,
+    })
+
 
 def transferencia_em_massa(destino, chamado, driver, wait, sid=None):
     """Equivalente ao antigo tranferenciaEmMassa(): usa resultado_organizado.txt como entrada."""
@@ -1154,10 +1368,10 @@ def handle_consulta_em_massa(data):
         "senha": senha,
     })
     
-
+socketio.start_background_task(worker)
 
 # ================= START =================
 
 if __name__ == "__main__":
-    socketio.start_background_task(worker)
+    
     socketio.run(app, host="0.0.0.0", port=5000)

@@ -187,7 +187,7 @@
     gap: 8px;
   }
 
-  .scan-row input { flex: 1; }
+  .scan-row input { flex: 1; min-width: 0; }
 
   .btn-scan {
     flex-shrink: 0;
@@ -206,14 +206,17 @@
 
   .btn-scan svg { width: 20px; height: 20px; }
 
+  /* Grade 2x2 nos modos: evita espremer 4 botões numa linha só em telas estreitas */
   .modes {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 4px;
   }
 
   .mode {
-    flex: 1;
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
     text-align: center;
     padding: 10px 6px;
     border-radius: 8px;
@@ -224,6 +227,9 @@
     line-height: 1.3;
     cursor: pointer;
     user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .mode.active[data-mode="fixa"] {
@@ -292,8 +298,9 @@
     border-radius: 8px;
     padding: 12px 14px;
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.6;
     margin-top: 10px;
+    white-space: pre-line;
   }
 
     .fila-item {
@@ -456,6 +463,21 @@
       </label>
     </div>
 
+    <div class="field" id="field-especifica-massa-toggle" style="display:none;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0;">
+        <input type="checkbox" id="chk-especifica-massa" style="width:auto;">
+        <span style="font-size:13px; color:var(--text-muted);">Transferir vários bens (um código por linha)</span>
+      </label>
+    </div>
+
+    <div class="field" id="field-origem" style="display:none; margin-top: 10px;">
+      <label for="origem">Local de origem</label>
+      <input class="mono" id="origem" placeholder="Código do local de origem" inputmode="numeric">
+    </div>
+
+    <textarea class="mono" id="objeto-especifica-massa" placeholder="Um código por linha" rows="5"
+      style="display:none; width:100%; background:var(--panel-raised); border:1px solid var(--line); border-radius:8px; color:var(--text); font-size:15px; padding:11px 12px; resize:vertical; margin-top:8px;"></textarea>
+
     <div class="scan-row" id="row-objeto-unico">
       <input class="mono" id="objeto" placeholder="Digite ou escaneie o código" inputmode="numeric">
       <button class="btn-scan" id="btn-scan" aria-label="Escanear código de barras">
@@ -563,6 +585,20 @@
   var elFieldConsultaMassaToggle = document.getElementById("field-consulta-massa-toggle");
   var elRowObjetoUnico = document.getElementById("row-objeto-unico");
   var elObjetoMassa = document.getElementById("objeto-massa");
+  var elFieldEspecificaMassaToggle = document.getElementById("field-especifica-massa-toggle");
+  var elChkEspecificaMassa = document.getElementById("chk-especifica-massa");
+  var elObjetoEspecificaMassa = document.getElementById("objeto-especifica-massa");
+  var elFieldOrigem = document.getElementById("field-origem");
+  var elOrigem = document.getElementById("origem");
+
+  elChkEspecificaMassa.addEventListener("change", function () {
+    var massa = elChkEspecificaMassa.checked;
+    elRowObjetoUnico.style.display = massa ? "none" : "flex";
+    elObjetoEspecificaMassa.style.display = massa ? "block" : "none";
+    elFieldOrigem.style.display = massa ? "block" : "none";
+    elBtnExecutar.textContent = massa ? "Transferir vários bens" : "Iniciar transferência específica";
+    elResult.classList.remove("show");
+  });
 
   elChkConsultaMassa.addEventListener("change", function () {
     var massa = elChkConsultaMassa.checked;
@@ -610,6 +646,7 @@
     resultado_transferir: "Transferência",
     resultado_transferir_recebimento: "Transferência específica",
     resultado_transferir_em_massa: "Transferência em massa",
+    resultado_transferir_recebimento_em_massa: "Transferência específica em massa",
     resultado_consulta: "Consulta",
     resultado_consulta_em_massa: "Consulta em massa"
   };
@@ -705,8 +742,7 @@
 
   btnConfirmar2fa.addEventListener("click", enviarCodigo2fa);
 
-  // ---- Preferências salvas localmente (servidor e usuário; nunca a senha) ----
-    // ---- Preferência salva localmente (usuário; nunca a senha) ----
+  // ---- Preferência salva localmente (usuário; nunca a senha) ----
   try {
     elUsuario.value = localStorage.getItem("grp_usuario") || "";
   } catch (e) {}
@@ -736,6 +772,47 @@
   function showResult(ok, texto) {
     elResult.className = "result show " + (ok ? "ok" : "erro");
     elResult.textContent = texto;
+  }
+
+  // ---- Formatação amigável dos resultados de consulta ----
+  // O GRP retorna o local como texto tipo "12345 - Almoxarifado Central".
+  // Aqui a gente transforma isso em algo do tipo "Bem 12345 está em Almoxarifado Central".
+  function formatarLinhaConsulta(objeto, texto) {
+    texto = (texto || "").trim();
+
+    if (!texto || texto === "inexistente" || texto === "elemento não encontrado") {
+      return objeto ? ("Bem " + objeto + ": não encontrado") : "Esse bem não foi encontrado.";
+    }
+
+    var partes = texto.split(" - ");
+    if (partes.length >= 2) {
+      var codigo = partes[0].trim();
+      var local = partes.slice(1).join(" - ").trim();
+      return "Bem " + codigo + " está em " + local;
+    }
+
+    return objeto ? ("Bem " + objeto + ": " + texto) : texto;
+  }
+
+  function formatarResultado(evento, data) {
+    var r = data.resultado;
+
+    if (evento === "resultado_consulta") {
+      return formatarLinhaConsulta(null, String(r));
+    }
+
+    if (evento === "resultado_consulta_em_massa" && Array.isArray(r)) {
+      return r.map(function (linha) {
+        var partes = String(linha).split(" | ");
+        return formatarLinhaConsulta(partes[0], partes[1] || "");
+      }).join("\n");
+    }
+
+    if (r && typeof r === "object" && !Array.isArray(r) && r.mensagem) {
+      return r.mensagem;
+    }
+
+    return typeof r === "object" ? JSON.stringify(r) : String(r);
   }
 
   // ---- Conexão ----
@@ -781,10 +858,12 @@
       addLog("PDF disponível para download: " + data.nome_arquivo);
     });
 
-    ["resultado_transferir", "resultado_transferir_recebimento", "resultado_transferir_em_massa", "resultado_consulta", "resultado_consulta_em_massa"].forEach(function (evento) {
+  ["resultado_transferir", "resultado_transferir_recebimento", "resultado_transferir_em_massa",
+  "resultado_transferir_recebimento_em_massa", "resultado_consulta", "resultado_consulta_em_massa"]
+    .forEach(function (evento) {
       socket.on(evento, function (data) {
         if (data.status === "ok") {
-          showResult(true, typeof data.resultado === "object" ? JSON.stringify(data.resultado) : String(data.resultado));
+          showResult(true, formatarResultado(evento, data));
         } else {
           showResult(false, data.mensagem || "A ação não foi concluída.");
         }
@@ -805,12 +884,13 @@
   });
 
   var elSectionObjeto = document.getElementById("section-objeto");
-  
+
   function atualizarCampos() {
     elSectionObjeto.style.display = currentMode === "massa" ? "none" : "block";
     elFieldDestino.style.display = (currentMode === "especifica" || currentMode === "massa") ? "block" : "none";
     elFieldChamado.style.display = currentMode === "consulta" ? "none" : "block";
     elFieldConsultaMassaToggle.style.display = currentMode === "consulta" ? "block" : "none";
+    elFieldEspecificaMassaToggle.style.display = currentMode === "especifica" ? "block" : "none";
 
     if (currentMode !== "consulta") {
       elChkConsultaMassa.checked = false;
@@ -818,11 +898,18 @@
       elObjetoMassa.style.display = "none";
     }
 
+    if (currentMode !== "especifica") {
+      elChkEspecificaMassa.checked = false;
+      elObjetoEspecificaMassa.style.display = "none";
+      elFieldOrigem.style.display = "none";
+      elRowObjetoUnico.style.display = "flex";
+    }
+
     elBtnExecutar.classList.remove("fixa", "especifica", "consulta", "massa");
     elBtnExecutar.classList.add(currentMode);
 
     if (currentMode === "fixa") elBtnExecutar.textContent = "Iniciar transferência";
-    if (currentMode === "especifica") elBtnExecutar.textContent = "Iniciar transferência específica";
+    if (currentMode === "especifica") elBtnExecutar.textContent = elChkEspecificaMassa.checked ? "Transferir vários bens" : "Iniciar transferência específica";
     if (currentMode === "massa") elBtnExecutar.textContent = "Iniciar transferência em massa";
     if (currentMode === "consulta") elBtnExecutar.textContent = elChkConsultaMassa.checked ? "Consultar em massa" : "Consultar objeto";
 
@@ -863,13 +950,32 @@
       payload.chamado = chamado;
       evento = "transferir";
     } else if (currentMode === "especifica") {
-      if (!objeto) { addLog("Informe o código do bem.", "erro"); return; }
-      if (!destino) { addLog("Informe o local de destino.", "erro"); return; }
-      if (!chamado) { addLog("Informe o chamado.", "erro"); return; }
-      payload.objeto = objeto;
-      payload.destino = destino;
-      payload.chamado = chamado;
-      evento = "transferir_recebimento";
+      if (elChkEspecificaMassa.checked) {
+        var objetosEspecificaMassa = elObjetoEspecificaMassa.value
+          .split("\n")
+          .map(function (s) { return s.trim(); })
+          .filter(function (s) { return s.length > 0; });
+        var origemVal = elOrigem.value.trim();
+
+        if (objetosEspecificaMassa.length === 0) { addLog("Informe ao menos um código.", "erro"); return; }
+        if (!origemVal) { addLog("Informe o local de origem.", "erro"); return; }
+        if (!destino) { addLog("Informe o local de destino.", "erro"); return; }
+        if (!chamado) { addLog("Informe o chamado.", "erro"); return; }
+
+        payload.objetos = objetosEspecificaMassa;
+        payload.origem = origemVal;
+        payload.destino = destino;
+        payload.chamado = chamado;
+        evento = "transferir_recebimento_em_massa";
+      } else {
+        if (!objeto) { addLog("Informe o código do bem.", "erro"); return; }
+        if (!destino) { addLog("Informe o local de destino.", "erro"); return; }
+        if (!chamado) { addLog("Informe o chamado.", "erro"); return; }
+        payload.objeto = objeto;
+        payload.destino = destino;
+        payload.chamado = chamado;
+        evento = "transferir_recebimento";
+      }
     } else if (currentMode === "massa") {
       if (!destino) { addLog("Informe o local de destino.", "erro"); return; }
       if (!chamado) { addLog("Informe o chamado.", "erro"); return; }
@@ -952,25 +1058,6 @@
     }
   }
 
-  function loopDeteccao() {
-    if (!detectando) return;
-
-    var detector = new BarcodeDetector();
-    detector.detect(video)
-      .then(function (codigos) {
-        if (codigos.length > 0) {
-          elObjeto.value = codigos[0].rawValue;
-          fecharScanner();
-          addLog("Código lido pela câmera: " + codigos[0].rawValue);
-        } else if (detectando) {
-          requestAnimationFrame(loopDeteccao);
-        }
-      })
-      .catch(function () {
-        if (detectando) requestAnimationFrame(loopDeteccao);
-      });
-  }
-
   // ---- Leitor físico (USB/Bluetooth em modo teclado) ----
   // Um leitor físico digita o código no campo em foco e envia Enter — já funciona nativamente.
   elObjeto.addEventListener("keydown", function (e) {
@@ -980,7 +1067,7 @@
     }
   });
 
-  
+
   conectar();
 })();
 </script>
